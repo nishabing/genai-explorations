@@ -1,0 +1,848 @@
+﻿* Isolation: Keeps dependencies separate for each project to avoid conflicts.
+
+* Clean environment: Prevents cluttering the global Python installation.
+
+* Reproducibility: Makes it easy to recreate the same environment using requirements.txt.
+
+* Security: Limits the risk by not installing unnecessary packages globally.
+
+* Python version control: Allows using different Python versions for different projects (with tools like pyenv).
+
+
+
+
+   * Venv setup
+   * Mac
+   * python3 -m venv venv 
+   * source ./venv/bin/activate
+   * Windows
+   * python -m venv env
+   * venv\Scripts\activate
+   * .env
+   * OPENAI_API_KEY
+   * Requirements.txt
+   * langchain[openai]
+   * Python-dotenv
+   * pip install -r requirements.txt
+
+
+   * import os
+   * from dotenv import load_dotenv
+   * from langchain.chat_models import init_chat_model
+   *    * load_dotenv()
+   *    * model = init_chat_model("gpt-4o-mini", model_provider="openai")
+   * response = model.invoke("who is modi")
+   * print(response.content)
+
+
+   * GROQ_API_KEY
+   * Requirements.txt - langchain[groq]
+
+
+   * import os
+   * from dotenv import load_dotenv
+   * from langchain.chat_models import init_chat_model
+   *    * load_dotenv()
+   *    * model = init_chat_model("llama-3.3-70b-versatile", model_provider="groq")
+   * response = model.invoke("who is modi")
+   * print(response.content)
+
+
+
+
+import os
+from dotenv import load_dotenv
+from langchain.chat_models import init_chat_model
+
+
+from typing import Annotated
+
+
+from typing_extensions import TypedDict
+
+
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages
+
+
+
+
+load_dotenv()
+
+
+class State(TypedDict):
+   messages: Annotated[list, add_messages]
+
+
+
+
+graph_builder = StateGraph(State)
+
+
+
+
+llm = init_chat_model("llama-3.3-70b-versatile", model_provider="groq")
+
+
+
+
+def chatbot(state: State):
+   return {"messages": [llm.invoke(state["messages"])]}
+
+
+
+
+# The first argument is the unique node name
+# The second argument is the function or object that will be called whenever
+# the node is used.
+graph_builder.add_node("chatbot", chatbot)
+
+
+graph_builder.add_edge(START, "chatbot")
+graph_builder.add_edge("chatbot", END)
+
+
+graph = graph_builder.compile()
+
+
+
+
+try:
+   img = graph.get_graph().draw_mermaid_png()
+   with open("graph.png", "wb") as f:
+       f.write(img)
+except Exception:
+   pass
+
+
+
+
+# w → Write mode (creates the file if it does not exist, or overwrites if it does).
+# b → Binary mode (means you are writing binary data, like images or audio—not text).
+
+
+def stream_graph_updates(user_input: str):
+   for event in graph.stream({"messages": [{"role": "user", "content": user_input}]}):
+       for value in event.values():
+           print("Assistant:", value["messages"][-1].content)
+
+
+
+
+while True:
+   try:
+       user_input = input("User: ")
+       if user_input.lower() in ["quit", "exit", "q"]:
+           print("Goodbye!")
+           break
+       stream_graph_updates(user_input)
+   except:
+       # fallback if input() is not available
+       user_input = "What do you know about LangGraph?"
+       print("User: " + user_input)
+       stream_graph_updates(user_input)
+       break
+
+
+
+
+
+
+
+
+Save graph in image
+
+
+try:
+   img = graph.get_graph().draw_mermaid_png()
+   with open("graph.png", "wb") as f:
+       f.write(img)
+except Exception:
+   pass
+
+
+Prebuilt agent
+
+
+from dotenv import load_dotenv
+load_dotenv()
+
+
+from langgraph.prebuilt import create_react_agent
+
+
+agent = create_react_agent(
+   model="groq:llama-3.3-70b-versatile", 
+   tools=[], 
+   prompt="You are a helpful assistant" 
+)
+
+
+# Run the agents
+response = agent.invoke(
+   {"messages": [{"role": "user", "content": "what are large language models"}]}
+)
+
+
+print(response)
+
+
+Weather tool with prompt
+
+
+from dotenv import load_dotenv
+load_dotenv()
+
+
+from langgraph.prebuilt import create_react_agent
+
+
+def get_weather(city: str) -> str: 
+   """Get weather for a given city."""
+   return f"It's always sunny in {city}!"
+
+
+agent = create_react_agent(
+   model="groq:llama-3.3-70b-versatile", 
+   tools=[get_weather], 
+   prompt="always use weather tool to get weather conditions and call it just once" 
+)
+
+
+# Run the agents
+response = agent.invoke(
+   {"messages": [{"role": "user", "content": "how is the weather in bangalore"}]}
+)
+
+
+print(response)
+
+
+________________
+
+
+No memory
+
+
+from dotenv import load_dotenv
+load_dotenv()
+
+
+from langgraph.prebuilt import create_react_agent
+
+
+agent = create_react_agent(
+   model="groq:llama-3.3-70b-versatile", 
+   tools=[], 
+   prompt="You are a helpful assistant" 
+)
+
+
+# Run the agent
+response = agent.invoke(
+   {"messages": [{"role": "user", "content": "when was he born"}]}
+)
+
+
+print(response)
+
+
+With memory
+from dotenv import load_dotenv
+load_dotenv()
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.prebuilt import create_react_agent
+
+
+checkpointer = InMemorySaver()
+agent = create_react_agent(
+   model="groq:llama-3.3-70b-versatile", 
+   tools=[], 
+   checkpointer=checkpointer,
+   prompt="You are a helpful assistant" 
+)
+
+
+config = {"configurable": {"thread_id": "1"}}
+first_response = agent.invoke(
+   {"messages": [{"role": "user", "content": "who is modi"}]},
+   config 
+)
+second_response = agent.invoke(
+   {"messages": [{"role": "user", "content": "when was he born?"}]},
+   config
+)
+print(first_response)
+print('-------------')
+print(second_response)
+Structured Response
+Examples - 
+   * Mail - sub, body
+   * Travel itinerary - Day1, day2, hotel, budget
+   * Code generation - language, code
+   * Health report - condition, medicine recommendation
+
+
+from dotenv import load_dotenv
+from pydantic import BaseModel
+load_dotenv()
+from langgraph.prebuilt import create_react_agent
+
+
+
+
+class MailResponse(BaseModel):
+   subject: str
+   body: str
+
+
+agent = create_react_agent(
+   model="groq:llama-3.3-70b-versatile", 
+   tools=[], 
+   response_format = MailResponse 
+)
+
+
+config = {"configurable": {"thread_id": "1"}}
+response = agent.invoke(
+   {"messages": [{"role": "user", "content": "write a mail applying leave for travel"}]},
+   config 
+)
+print(response)
+print("------------------------------")
+print(response["structured_response"])
+
+
+print("------------------------------")
+print(response["structured_response"].subject)
+
+
+print("------------------------------")
+print(response["structured_response"].body)
+________________
+
+
+LangChain MCP Adapters
+   * requirements.txt - langchain_mcp_adapters
+   * async def run_agent(): # func inside that
+   * if __name__ == "__main__":
+    asyncio.run(run_agent())
+   * import asyncio        
+   * GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+        
+
+
+from dotenv import load_dotenv
+load_dotenv()
+import asyncio
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
+import os
+
+
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+
+
+async def run_agent():
+   client = MultiServerMCPClient(
+       {
+           "github": {
+               "command": "npx",
+               "args": [
+                   "-y",
+                   "@modelcontextprotocol/server-github"
+               ],
+               "env": {
+                   "GITHUB_PERSONAL_ACCESS_TOKEN": GITHUB_TOKEN
+               },
+               "transport": "stdio"
+           }
+       }
+   )
+   tools = await client.get_tools()
+   agent = create_react_agent("groq:llama-3.3-70b-versatile", tools)
+   response = await agent.ainvoke({"messages": "what are the files present in repository keertipurswani/EducosysGenerativeAI"})
+   print(response["messages"][-1].content)
+
+
+if __name__ == "__main__":
+   asyncio.run(run_agent())
+
+
+________________
+
+
+from dotenv import load_dotenv
+load_dotenv()
+import asyncio
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
+import os
+
+
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+
+
+async def run_agent():
+   client = MultiServerMCPClient(
+       {
+           "github": {
+               "command": "npx",
+               "args": [
+                   "-y",
+                   "@modelcontextprotocol/server-github"
+               ],
+               "env": {
+                   "GITHUB_PERSONAL_ACCESS_TOKEN": GITHUB_TOKEN
+               },
+               "transport": "stdio"
+           },
+           "filesystem": {
+               "command": "npx",
+               "args": [
+                   "-y",
+                   "@modelcontextprotocol/server-filesystem",
+                   "/Users/keertipurswani/GitHub/GenAI Bootcamp ref"
+               ],
+               "transport":"stdio"
+           }
+       }
+   )
+   tools = await client.get_tools()
+   agent = create_react_agent("openai:gpt-4o", tools)
+   response = await agent.ainvoke({"messages": "what are the files present in GenAI Bootcamp REF Directory"})
+   print(response["messages"][-1].content)
+
+
+if __name__ == "__main__":
+   asyncio.run(run_agent())
+
+
+   response = await agent.ainvoke({"messages": "Create a new file 'main6.py' in GenAI Bootcamp REF Directory"})
+Create MCP Server
+
+
+from mcp.server.fastmcp import FastMCP
+import os
+
+
+mcp = FastMCP("EducosysFileSystem")
+
+
+@mcp.tool()
+def addFile(filename: str):
+   """Create a new file in current directory"""
+   if not os.path.exists(filename):
+       with open(filename, "w") as f:
+           pass
+       print(f"File '{filename}' created.")
+   else:
+       print(f"File '{filename}' already exists.")
+
+
+@mcp.tool()
+def addFolder(directory_name: str):
+   """Create a new Directory in current directory"""
+   if not os.path.exists(directory_name):
+       os.mkdir(directory_name)
+       print(f"Directory '{directory_name}' created.")
+   else:
+       print(f"Directory '{directory_name}' already exists.")
+
+
+if __name__ == "__main__":
+   mcp.run(transport="stdio")
+
+
+"EducosysFileSystem": {
+               "command": "python",
+               "args": [
+                   "./filesystem_mcp.py"
+               ],
+               "transport":"stdio"
+           }
+________________
+
+
+from dotenv import load_dotenv
+load_dotenv()
+import asyncio
+from langchain_mcp_adapters.client import MultiServerMCPClient
+from langgraph.prebuilt import create_react_agent
+import os
+
+
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+
+
+async def run_agent():
+   client = MultiServerMCPClient(
+       {
+           "github": {
+               "command": "npx",
+               "args": [
+                   "-y",
+                   "@modelcontextprotocol/server-github"
+               ],
+               "env": {
+                   "GITHUB_PERSONAL_ACCESS_TOKEN": GITHUB_TOKEN
+               },
+               "transport": "stdio"
+           },
+           "filesystem": {
+               "command": "npx",
+               "args": [
+                   "-y",
+                   "@modelcontextprotocol/server-filesystem",
+                   "/Users/keertipurswani/GitHub/GenAI Bootcamp"
+               ],
+               "transport": "stdio"
+           }
+       }
+   )
+   tools = await client.get_tools()
+   print("Tools -----------------")
+   print(tools)
+   print("-----------------------------")
+   agent = create_react_agent("openai:gpt-4o", tools)
+   response = await agent.ainvoke({"messages": "create an empty file educosys.txt in the directory /Users/keertipurswani/GitHub/GenAI Bootcamp"})
+   print(response["messages"][-1].content)
+
+
+if __name__ == "__main__":
+   asyncio.run(run_agent())
+Day 2
+
+
+Streamlit
+   * Requirements.txt - streamlit
+from dotenv import load_dotenv
+load_dotenv()
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.prebuilt import create_react_agent
+
+
+import streamlit as st
+
+
+st.title("Educosys Chatbot App")
+
+
+if "messages" not in st.session_state:
+   st.session_state.messages = []
+
+
+
+
+checkpointer = InMemorySaver()
+
+
+agent = create_react_agent(
+   model="openai:gpt-4o", 
+   tools=[], 
+   checkpointer=checkpointer,
+   prompt="You are a helpful assistant" 
+)
+
+
+def stream_graph_updates(user_input : str):
+   assistant_response = ""
+
+
+   with st.chat_message("assistant"):
+       message_placeholder = st.empty()
+       for event in agent.stream({"messages": [{"role": "user", "content": user_input}]}, {"configurable": {"thread_id": "def"}}):
+           for value in event.values():
+               new_text = value["messages"][-1].content
+               assistant_response += new_text
+               message_placeholder.markdown(assistant_response)
+
+
+   st.session_state.messages.append(("assistant", assistant_response))
+
+
+# Display previous chat history
+for role, message in st.session_state.messages:
+   with st.chat_message(role):
+       st.markdown(message)
+
+
+prompt = st.chat_input("What is your question?")
+if prompt:
+   # Display user input as a chat message
+   with st.chat_message("user"):
+       st.markdown(prompt)
+   # Append user input to session state
+   st.session_state.messages.append(("user", prompt))
+  
+   # Get response from the chatbot based on user input
+   response = stream_graph_updates(prompt)
+
+
+   * Just for understanding of streaming - Outer loop for event =>
+   * Loops over each streamed event (state updates from LangGraph execution)
+   * An event in LangGraph is a snapshot of which node just ran and what it produced
+   * Event looks like this - 
+   * {
+  "<node_name>": {
+    "messages": [...],
+    "action": ...,
+    "observation": ...,
+    ...
+  }
+}
+   * Each value in the event corresponds to a node’s output
+
+
+
+
+
+
+   * streamlit run streamlit_app.py
+________________
+
+
+
+
+App using Multi-Modal Models
+   * .env - GEMINI_API_KEY
+   * Requirements.txt - google.genai
+
+
+import streamlit as st
+import os
+from dotenv import load_dotenv
+from google import genai
+from google.genai import types
+from PIL import Image
+from io import BytesIO
+
+
+load_dotenv()
+
+
+client = genai.Client()
+
+
+st.title("Educosys Image Generator")
+user_prompt = st.text_input("What do you want to generate image for?")
+
+
+if st.button("Generate Image"):
+   if not user_prompt:
+       st.warning("Please enter the prompt!")
+   else:
+       try:
+           with st.spinner("Generating image..."):
+               response = client.models.generate_content(
+               model="gemini-2.0-flash-exp-image-generation",
+               contents=user_prompt,
+               config=types.GenerateContentConfig(
+                   response_modalities=['Text', 'Image']
+               )
+           )
+          
+           st.subheader("Generated Image")
+           for part in response.candidates[0].content.parts:
+               if part.text is not None:
+                   st.write(part.text)
+               elif part.inline_data is not None:
+                   image = Image.open(BytesIO((part.inline_data.data)))
+                   st.image(image)
+              
+       except Exception as e:
+           st.error("Error generating image")
+st.title("Educosys Image Caption Generator")
+
+
+uploaded_image = st.file_uploader("Upload an image for caption generation", type=["png", "jpg", "jpeg"])
+
+
+if uploaded_image:
+   image = Image.open(uploaded_image)
+   st.image(image, caption="Uploaded Image")
+
+
+   if st.button("Generate Caption"):
+       try:
+           with st.spinner("Generating caption..."):
+               response = client.models.generate_content(
+               model="gemini-2.0-flash",
+               contents=["What is this image?", image])
+               st.subheader("Generated Caption:")
+               st.write(response.text)
+       except Exception as e:
+           st.error("Error generating caption")
+
+
+st.title("Educosys YouTube Video Summarizer")
+youtube_url = st.text_input("Enter YouTube Video URL")
+
+
+if st.button("Summarize Video"):
+   if not youtube_url:
+       st.warning("No YouTube URL Present!")
+   else:
+       try:
+           with st.spinner("Generating summary..."):
+               response = client.models.generate_content(
+                   model='models/gemini-2.0-flash',
+                   contents=types.Content(
+                       parts=[
+                           types.Part(text='Can you summarize this video?'),
+                           types.Part(
+                               file_data=types.FileData(file_uri=youtube_url)
+                           )
+                       ]
+                   )
+               )
+           st.subheader("Video Summary")
+           st.write(response.text)
+       except Exception as e:
+           st.error("Error generating summary")
+      
+RAG
+Requirements.txt - langchain-chroma
+langchain_community
+
+
+from dotenv import load_dotenv
+load_dotenv()
+from langchain.chat_models import init_chat_model
+
+
+from langchain_community.document_loaders import WebBaseLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.tools import tool
+from langgraph.prebuilt import create_react_agent
+from langchain_chroma import Chroma
+
+
+
+
+loader = WebBaseLoader(
+   web_paths=["https://www.educosys.com/course/genai"]
+)
+docs = loader.load()
+
+
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+all_splits = text_splitter.split_documents(docs)
+
+
+print(all_splits)
+
+
+from langchain_openai import OpenAIEmbeddings
+embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+
+
+vectorstore = Chroma(collection_name="educosys_genai_info", embedding_function=embeddings, persist_directory="./chroma_genai")
+
+
+vectorstore.add_documents(documents=all_splits)
+
+
+print(vectorstore._collection.count())  # Check total stored chunks
+
+
+@tool
+def retrieve_context(query: str):
+   """Search for info related to educosys genai course"""
+   try:
+       embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
+       vector_store = Chroma(
+           collection_name="educosys_genai_info",
+           embedding_function=embeddings,
+           persist_directory="./chroma_genai",
+       )
+       retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+
+
+       print(f"Querying retrieve_context with: {query}")
+       print("--------------------------------------------------------------")
+       results = retriever.invoke(query)
+       print(f"Retrieved documents: {len(results)} matches found")
+       for i, doc in enumerate(results):
+           print(f"Document {i + 1}: {doc.page_content[:100]}...")
+      
+       print("--------------------------------------------------------------")
+
+
+       content = "\n".join([doc.page_content for doc in results])
+       if not content:
+           print(f"No content retrieved for query: {query}")
+           return f"No reviews found for '{query}'."
+      
+       print("--------------------------------------------------------------")
+       print(f"Returning content: {content[:200]}...")
+       return content
+   except Exception as e:
+       print(f"Error in retrieve_context: {e}")
+       return f"Error retrieving reviews for '{query}'. Please try again."
+
+
+
+
+llm = init_chat_model("gpt-4o", model_provider="openai")
+
+
+agent_executor = create_react_agent(llm, [retrieve_context])
+
+
+input_message = (
+   "give me curriculcum of week 1 of educosys genai course?"
+)
+for event in agent_executor.stream(
+   {"messages": [{"role": "user", "content": input_message}]},
+   stream_mode="values"
+):
+   event["messages"][-1].pretty_print()
+
+
+
+
+   * .env - GOOGLE_API_KEY (create on https://aistudio.google.com/apikey)
+
+
+​​
+
+
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
+________________
+Print embeddings
+   * for i, (doc, emb) in enumerate(zip(results["documents"], results["embeddings"]), 1): print(f"--- Chunk {i} ---") print("Text:", doc[:200], "...") # print first 200 chars of text print("Embedding length:", len(emb)) # number of dimensions print("Embedding sample:", emb[:20], "...") # print first 20 values print()
+
+
+________________
+
+
+Multi-Agent Architectures
+Supervisor Architecture 
+   * Customer Support Bot -  Classifier, FAQ Bot, Sentiment Analyzer, Escalation Agent
+   * Code Generation Workflow - Designer, Coder, Tester, Explainer
+   * Loan Approval Automation - Document Parser, Validator, Risk Scorer, Decision Maker
+   * Interview Preparation Assistant -  Resume Reviewer, Mock Interviewer, Feedback Generator
+   * E-commerce Product Uploader - Image Recognizer, Category Classifier, Description Writer, Price Suggester
+
+Swarm Architecture
+      * Research Assistant - Researcher, Critic, Summarizer, Fact-checker
+      * Story Writing Team - Plot Developer, Character Designer, Dialogue Writer, Editor
+      * Scientific Paper Generator - Literature Reviewer, Data Analyst, Writer, Reviewer
+      * Startup Pitch Creator - Business Modeler, Market Analyst, Financial Planner, Designer
+      * Debate Simulator - Government, Citizen, Expert, Journalist
+
+________________
+
+
+Ollama
+
+
+         * Local Execution: Models run on your device, keeping sensitive data private and secure.
+         * Cross-Platform: Supports macOS, Linux, and Windows.
+         * Multi-Model Compatibility: Easily switch between LLaMA, Gemma, Mistral, and others.
+         * Offline Use: No internet needed after downloading a model.
+         * Customizable: Modify models and settings based on your hardware or specific needs.
+         * Easy to Use: Simple command-line interface, beginner-friendly.
+         * Open Source: Transparent and modifiable codebase.
